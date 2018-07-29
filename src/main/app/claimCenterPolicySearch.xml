@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:context="http://www.springframework.org/schema/context" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd">
+
+   <!--    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8085" doc:name="HTTP Listener Configuration"/> -->
+    <http:request-config name="HTTP_Request_Configuration" protocol="HTTPS" host="${CIF.Host}" port="${CIF.Port}" basePath="${CIF.BasePath}" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="66de65d352bc471196b2288d1ce726d" password="77ac7e4918794bc5BF61C84A55D53F8F"/>
+        <tls:context>
+            <tls:trust-store insecure="true"/>
+        </tls:context>
+    </http:request-config>
+    <http:request-config name="HTTP_PolicyRequest_Configuration" protocol="HTTPS" host="${PolicyAPI.Host}" port="${PolicyAPI.Port}" basePath="${PolicyAPI.BasePath}" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="f6b64c8286c147feababee338ded2a4e" password="9f15be761ac746b6AE4778BC1E1CB538"/>
+        <tls:context>
+            <tls:trust-store insecure="true"/>
+        </tls:context>
+    </http:request-config>
+    <api-platform-gw:api apiName="ClaimCenterPolicySearch" version="DEV" flowRef="claimCenterPolicySearchFlow" create="true" doc:name="API Autodiscovery"/>
+    <api-platform-gw:api apiName="ClaimCenterPolicySearch" version="QA1.0" flowRef="claimCenterPolicySearchFlow" create="true" doc:name="API Autodiscovery"/>
+    <context:property-placeholder location="${MULE_ENV}.properties "/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <smtp:gmail-connector name="Gmail" validateConnections="true" doc:name="Gmail"/>
+    <flow name="claimCenterPolicySearchFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="${PolicyServicePath}" doc:name="HTTP"/>
+        <byte-array-to-string-transformer mimeType="application/xml" doc:name="Byte Array to String"/>
+        <cxf:proxy-service namespace="http://www.example.org/PolicyCriteriaWSDL/" service="PolicyCriteriaWSDL" payload="body" wsdlLocation="PolicyCriteriaWSDL.wsdl" doc:name="CXF"/>
+        <set-payload value="#[payload:java.lang.String]" mimeType="application/xml" doc:name="Set Payload to string"/>
+      <!--   <set-variable variableName="fullName" value="#[xpath3('//*:FirstName') + '  ' + xpath3('//*:LastName')]" doc:name="fullNameVariable"/> --> 
+        <!-- <set-variable variableName="zipCode" value="#[xpath3('//*:PostalCode')]" doc:name="zipCodeVariable"/>     -->
+        <set-variable variableName="policyNumber" value="#[xpath3('//*:PolicyNumber')]" doc:name="policyNumberVariable"/>
+        <set-variable variableName="dateofloss" value="#[xpath3('//*:LossDate')]" doc:name="lossDateVariable"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-variable variableName="CustomerUriParameter"><![CDATA[%dw 1.0
+%output application/java
+---
+{
+Name:(payload.PolicySearchCriteria.FirstName ++ ' ' ++ payload.PolicySearchCriteria.LastName) when (payload.PolicySearchCriteria.FirstName != null and payload.PolicySearchCriteria.LastName != null) otherwise '',
+companyName: payload.PolicySearchCriteria.CompanyName when payload.PolicySearchCriteria.CompanyName != null otherwise '',
+phoneNumber: payload.PolicySearchCriteria.PhoneNumber_Grg when payload.PolicySearchCriteria.PhoneNumber_Grg != null otherwise '',
+addressLine1: payload.PolicySearchCriteria.InsuredAddress.AddressLine1 when payload.PolicySearchCriteria.InsuredAddress.AddressLine1 != null otherwise '',
+city: payload.PolicySearchCriteria.InsuredAddress.City when payload.PolicySearchCriteria.InsuredAddress.City != null otherwise '',
+state: payload.PolicySearchCriteria.InsuredAddress.State when payload.PolicySearchCriteria.InsuredAddress.State != null otherwise '',
+postalCode: payload.PolicySearchCriteria.InsuredAddress.PostalCode when payload.PolicySearchCriteria.InsuredAddress.PostalCode != null otherwise ''
+}]]></dw:set-variable>
+        </dw:transform-message>
+        
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="sample_data\json.json"/>
+            <dw:set-variable variableName="dateofloss"><![CDATA[%dw 1.0
+%output application/java
+---
+flowVars.dateofloss as :datetime as :string {format:"MMddyyyy"} 
+
+]]></dw:set-variable>      
+        </dw:transform-message>
+             
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.policyNumber==empty]">
+                <set-payload value="#[null]" doc:name="Set Payload to null"/>
+                <until-successful maxRetries="5" synchronous="true" doc:name="Until Successful">
+                    <http:request config-ref="HTTP_Request_Configuration" path="${CIF.Path}" method="GET" doc:name="CustomerSerachAPI">
+                        <http:request-builder>
+                            <http:query-param paramName="fullName" value="#[flowVars.CustomerUriParameter.Name]"/>
+                            <http:query-param paramName="businessName" value="#[flowVars.CustomerUriParameter.companyName]"/>
+                            <http:query-param paramName="homePhone" value="#[flowVars.CustomerUriParameter.phoneNumber]"/>
+                            <http:query-param paramName="addressLine1" value="#[flowVars.CustomerUriParameter.addressLine1]"/>
+                            <http:query-param paramName="city" value="#[flowVars.CustomerUriParameter.city]"/>
+                            <http:query-param paramName="state" value="#[flowVars.CustomerUriParameter.state]"/>
+                            <http:query-param paramName="zipCode" value="#[flowVars.CustomerUriParameter.postalCode]"/>
+                            <http:header headerName="Authorization" value="${CIF.Auth}"/>
+                        </http:request-builder>
+                    </http:request>
+                </until-successful>
+
+                <byte-array-to-string-transformer mimeType="application/json" doc:name="Byte Array to String"/>
+
+                <logger message="PolicyNumber from Customer API: #[payload]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="policyResponseList" value="#[new java.util.ArrayList()]" mimeType="application/json" doc:name="policyResponseListVariable"/>
+
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+((flatten (payload.PolicyData filter ($.PolicyNumber != null) map ($.PolicyNumber))) distinctBy $) when payload.PolicyData? otherwise ['null']]]></dw:set-payload>
+                </dw:transform-message>
+                <foreach doc:name="For Each">
+                    <logger message="PolicyNumber to hit PolicySearch: #[payload]" level="INFO" doc:name="Logger"/>
+                    <expression-filter expression="#[payload != null &amp;&amp; payload !='null']" doc:name="Expression"/>
+                    <until-successful maxRetries="5" doc:name="Until Successful" synchronous="true">
+                        <http:request config-ref="HTTP_PolicyRequest_Configuration" path="${PolicyAPI.Path}" method="GET" doc:name="PolicySearchAPI">
+                            <http:request-builder>
+                                <http:uri-param paramName="policyNumber" value="#[payload]"/>
+                                <http:uri-param paramName="dateofloss" value="#[flowVars.dateofloss]"/>
+                                <http:header headerName="Authorization" value="${PolicyAPI.Auth}"/>
+                                <http:header headerName="Content-Type" value="application/json"/>
+                            </http:request-builder>
+                        </http:request>
+                    </until-successful>
+
+                    <byte-array-to-string-transformer mimeType="application/json" doc:name="Byte Array to String"/>
+                    <expression-filter expression="#[payload contains &quot;PolicyNumber&quot;]" doc:name="policyNumberFilterExpression"/>
+                    <expression-component doc:name="policyListAddExpression"><![CDATA[#[flowVars.policyResponseList.add(payload)]]]></expression-component>
+                </foreach>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace gran http://guidewire.com/cc/gx/grange.model.policysearchresultsetmodel
+---
+{
+gran#PolicySearchResultSet: {
+gran#Summaries: {(flowVars.policyResponseList map {
+(gran#Entry: {
+(gran#InsuredName:$.Contacts.FirstName[0] ++ " " ++ $.Contacts.LastName[0]) when ($.Contacts !=null and $.Contacts.FirstName !=null),
+(gran#City:$.Contacts.City[0]) when ($.Contacts !=null and $.Contacts.City !=null),
+(gran#PostalCode:$.Contacts.Zip[0]) when ($.Contacts !=null and $.Contacts.Zip !=null),
+(gran#State: p($.Contacts[0].State)) when ($.Contacts[0] !=null and $.Contacts[0].State !=null),
+(gran#PolicyNumber: $.Policy.PolicySymbol ++ " " ++ $.Policy.PolicyNumber ++ " " ++ $.Policy.PolicyMod ++ " " ++ $.Policy.PolicyCompany) when ($.Policy !=null and $.Policy.PolicyNumber !=null),
+(gran#PolicyType: p($.Policy.LineOfBusiness)) when ($.Policy !=null and $.Policy.LineOfBusiness !=null),
+(gran#Status:$.Policy.Status) when ($.Policy !=null and $.Policy.Status !=null),
+(gran#EffectiveDate: $.Policy.EffectiveDate as :date{
+format:"MM/dd/yyyy"
+     } as :string {format:"YYYY-MM-dd'T00:00:00-05:00'"}) when ($.Policy !=null and $.Policy.EffectiveDate !=null) , 
+(gran#ExpirationDate: $.Policy.ExpirationDate as :date{
+format:"MM/dd/yyyy"
+     } as :string {format:"YYYY-MM-dd'T00:00:00-05:00'"}) when ($.Policy !=null and $.Policy.ExpirationDate !=null) ,
+
+(gran#Vehicles: {
+gran#Entry: {
+(gran#VehicleNumber: $.RiskUnits[0].Detail[0..2] replace '/' with '') when ($.RiskUnits[0] !=null and $.RiskUnits[0].Detail !=null),
+(gran#LicensePlate: $.RiskUnits[0].Detail1) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Detail1 !=null),
+(gran#Make: $.RiskUnits[0].Make) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Make !=null),
+(gran#Model: $.RiskUnits[0].Model) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Model !=null) ,
+(gran#Vin: $.RiskUnits[0].Vin) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Vin !=null) ,
+(gran#SerialNumber: $.RiskUnits[0].Vin) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Vin !=null) 
+          }
+          }) when $.RiskUnits[0] is :object ,
+(gran#Properties:{
+gran#Entry:{
+(gran#PropertyNumber: $.RiskUnits[0].Detail[0..2] replace '/' with '') when ($.RiskUnits[0] !=null and $.RiskUnits[0].Detail !=null),
+(gran#Location: $.RiskUnits[0].Detail) when ($.RiskUnits[0] !=null and $.RiskUnits[0].Detail !=null) 
+   } 
+       }) when $.RiskUnits[0] is :object,
+(gran#AddressLine1: $.Contacts.Address[0]) when $.Contacts is :object and $.Contacts.Address[0]? ,
+(gran#AddressLine2: $.Contacts.Address2[0]) when $.Contacts is :object and $.Contacts.Address[0]?
+}) when $.Policy.LineOfBusiness?
+} 
+)}
+   
+  }         
+}
+]]></dw:set-payload>
+                </dw:transform-message>
+            </when>
+            <otherwise>
+                <until-successful maxRetries="5" doc:name="Until Successful" synchronous="true">
+                    <http:request config-ref="HTTP_PolicyRequest_Configuration" path="${PolicyAPI.Path}" method="GET" doc:name="PolicySearchAPI">
+                        <http:request-builder>
+                            <http:uri-param paramName="policyNumber" value="#[flowVars.policyNumber]"/>
+                            <http:uri-param paramName="dateofloss" value="#[flowVars.dateofloss]"/>
+                            <http:header headerName="Authorization" value="${PolicyAPI.Auth}"/>
+                            <http:header headerName="Content-Type" value="application/json"/>
+                        </http:request-builder>
+                    </http:request>
+                </until-successful>
+
+                <byte-array-to-string-transformer mimeType="application/json" doc:name="Byte Array to String"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:input-payload/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace gran http://guidewire.com/cc/gx/grange.model.policysearchresultsetmodel
+---
+{
+gran#PolicySearchResultSet:{
+gran#Summaries:{
+(gran#Entry:{
+(gran#InsuredName: payload.Contacts.FirstName[0] ++ " " ++ payload.Contacts.LastName[0]) when (payload.Contacts !=null and payload.Contacts.FirstName !=null),
+(gran#City: payload.Contacts.City[0]) when (payload.Contacts !=null and payload.Contacts.City !=null),
+(gran#PostalCode: payload.Contacts.Zip[0]) when (payload.Contacts !=null and payload.Contacts.Zip !=null),
+(gran#State: p(payload.Contacts[0].State)) when (payload.Contacts[0] !=null and payload.Contacts[0].State !=null),
+(gran#PolicyNumber: payload.Policy.PolicySymbol ++ " " ++ payload.Policy.PolicyNumber[0..6] ++ " " ++ payload.Policy.PolicyMod ++ " " ++ payload.Policy.PolicyCompany) when (payload.Policy !=null and payload.Policy.PolicyNumber !=null),
+(gran#PolicyType: p(payload.Policy.LineOfBusiness)) when (payload.Policy !=null and payload.Policy.LineOfBusiness !=null),
+(gran#Status:payload.Policy.Status) when (payload.Policy !=null and payload.Policy.Status !=null),
+(gran#EffectiveDate: payload.Policy.EffectiveDate as :date{
+	format:"MM/dd/yyyy"
+     } as :string {format:"YYYY-MM-dd'T00:00:00-05:00'"}) when (payload.Policy !=null and payload.Policy.EffectiveDate !=null) ,	
+(gran#ExpirationDate: payload.Policy.ExpirationDate as :date{
+	format:"MM/dd/yyyy"
+     } as :string {format:"YYYY-MM-dd'T00:00:00-05:00'"}) when (payload.Policy !=null and payload.Policy.ExpirationDate !=null),
+		
+(gran#Vehicles: {
+gran#Entry: {
+(gran#VehicleNumber: payload.RiskUnits[0].Detail[0..2] replace '/' with '') when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Detail !=null),
+(gran#LicensePlate: payload.RiskUnits[0].Detail1) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Detail1 !=null) ,
+(gran#Make: payload.RiskUnits[0].Make) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Make !=null),
+(gran#Model: payload.RiskUnits[0].Model) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Model !=null) ,
+(gran#Vin: payload.RiskUnits[0].Vin) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Vin !=null) ,
+(gran#SerialNumber: payload.RiskUnits[0].Vin) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Vin !=null) 
+         }
+       }) when payload.RiskUnits[0] is :object,
+(gran#Properties:{
+gran#Entry:{
+(gran#PropertyNumber: payload.RiskUnits[0].Detail[0..2] replace '/' with '') when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Detail !=null),
+(gran#Location: payload.RiskUnits[0].Detail) when (payload.RiskUnits[0] !=null and payload.RiskUnits[0].Detail !=null)
+	
+         }	
+        }) when payload.RiskUnits[0] is :object,
+gran#AddressLine1: payload.Contacts.Address[0] default '' ,
+gran#AddressLine2: payload.Contacts.Address2[0] default ''                              
+     }) when payload.Policy.LineOfBusiness? 
+    }	
+   }	
+  }
+ ]]></dw:set-payload>
+                </dw:transform-message>
+
+
+            </otherwise>
+        </choice>
+        <byte-array-to-string-transformer mimeType="application/json" doc:name="Byte Array to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="#[&quot;Exception Occured in  API. Payload before Exception was &quot; + payload  + &quot;and exception message is &quot; + exception.cause.message" level="INFO" doc:name="Logger"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>
